@@ -1,0 +1,114 @@
+#!/bin/bash
+
+layout="$1"
+dotdir="$HOME/.dotfiles/"
+
+change_latte_layout(){
+	# While loop needed if latte-dock crashes on changing the layout
+  while [[ $(grep currentLayout "$HOME/.config/lattedockrc" | cut -d"=" -f2) != "$layout" ]]; do
+    qdbus org.kde.lattedock /Latte org.kde.LatteDock.switchToLayout "$layout" &> /dev/null
+    sleep .5
+  done
+
+  # Old implementation:
+  # if $(pgrep -x latte-dock > /dev/null); then
+  #   kquitapp5 lattedock
+  # fi
+  # sed -i "s/currentLayout=.*./currentLayout=$layout/g" "$HOME/.config/lattedockrc"
+  # sed -i "s/lastNonAssignedLayout=.*./lastNonAssignedLayout=$layout/g" "$HOME/.config/lattedockrc"
+  # latte-dock &> /dev/null & disown
+}
+
+switch_kwin(){
+  export KDEWM=kwin_x11  
+  change_latte_layout
+
+  killall -q bspc_events polybar bspwm sxhkd compton
+
+  stow plasma-"$layout" &> /dev/null
+
+  #Restart programs to reload configs
+  kwin_x11 --replace &> /dev/null & disown
+  kquitapp5 plasmashell &> /dev/null
+  kstart5 plasmashell &> /dev/null & disown
+  kquitapp5 kglobalaccel 
+  kstart5 krunner &> /dev/null & disown
+}
+
+bspwm_tmp_rules(){
+	bspc rule -"$1" konsole desktop=I
+	bspc rule -"$1" Firefox desktop=II
+	bspc rule -"$1" Sublime_text desktop=III
+	bspc rule -"$1" okular desktop=IV
+	bspc rule -"$1" dolphin desktop=V
+	bspc rule -"$1" Spotify desktop=VI
+	bspc rule -"$1" Signal desktop=VII
+	bspc rule -"$1" Thunderbird desktop=VII
+  bspc rule -"$1" SimpleScreenRecorder desktop=X
+}
+
+switch_bspwm(){
+	export KDEWM=bspwm
+
+	# Kill kwin, let sxhkd takeover before restart. 
+	# Sometimes bspwm errors out on first start
+  killall -q kwin_x11
+	while [[ ! $(pgrep -x bspwm) ]]; do
+		bspwm &> /dev/null & disown
+    killall -q kwin_x11
+		sleep .5
+	done
+
+  change_latte_layout
+  kquitapp5 plasmashell &> /dev/null
+  kquitapp5 krunner &> /dev/null
+
+
+	
+	# Place windows on their preferred desktop when orphaning
+	bspwm_tmp_rules a #add rules for placement
+	bspc wm -o
+	bspwm_tmp_rules r #remove rules
+
+	#reset padding
+	bspc config bottom_padding 0
+	bspc config left_padding 0
+}
+
+# Place all the windows on the first desktop before switching
+windows_to_same_desktop(){
+	bspc desktop -f I
+	bspc desktop I -l monocle
+	for i in $(bspc query -N); do
+		bspc node "$i" -d I
+	done
+}
+
+if ! [[ $layout =~ ^(bspwm|osx|unity|windows)$ ]]; then
+	echo "Error: unknown layout, choose: osx, unity, windows or bspwm"
+	exit
+fi
+
+#Move all windows to the first desktop if bspwm is currently running
+if pgrep -x bspwm > /dev/null; then
+  if [[ $layout == "bspwm" ]]; then
+    echo "Bspwm is already running"
+    exit
+	else 
+		windows_to_same_desktop
+	fi
+fi
+
+
+#Remove stow connections
+cd "$dotdir" || (echo "dotdit doesn't exist" && exit)
+stow -D plasma-{osx,unity,windows} &> /dev/null
+rm ~/.config/kwinrc &> /dev/null
+
+if [[ $layout == "bspwm" ]]; then
+    switch_bspwm
+else
+    switch_kwin
+fi
+
+cd "$OLPWD"
