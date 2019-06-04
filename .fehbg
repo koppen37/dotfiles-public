@@ -1,0 +1,28 @@
+cd ~/.wallpapers
+
+#Set latest downloaded image
+feh --bg-fill --no-fehbg $(ls | sort -r | head -1)
+
+if [ ! -f $(date +%Y%m%d).jpg ]; then
+	#Wait for connection with Bing
+	while ! ping -q -c1 bing.com > /dev/null ; do
+		sleep 60
+	done
+
+	#Download JSON of last 8 images
+	json=$(curl -qs "http://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=en-US")
+
+	for i in {0..7}; do
+		DATE=$(echo $json | jq ."images[$i].startdate" | grep -o '[0-9]*')
+
+		if [ ! -f $DATE.jpg ]; then
+			echo "Downloading $DATE"
+			imgurl="https://bing.com$(echo $json | jq ".images[$i].url" | tr -d '"')"
+			wget -q $imgurl -O $DATE.jpg
+		fi
+	done
+
+	#Set latest downloaded image
+	feh --bg-fill --no-fehbg $(ls | sort -r | head -1)
+fi
+
